@@ -1,0 +1,11 @@
+!!python/object/apply:collections.OrderedDict
+- - - Run
+    - 201010_TP53-20201009_BTK
+  - - Samples
+    - !!python/object/apply:collections.defaultdict
+      args:
+      - !!python/name:builtins.dict ''
+      dictitems:
+        BTKskarpa:
+          fwd: /mnt/nfs/shared/MedGen/sequencing_results/primary_data/201010_TP53-20201009/raw_fastq/BTKskarpa_R1.fastq.gz
+          rev: /mnt/nfs/shared/MedGen/sequencing_results/primary_data/201010_TP53-20201009/raw_fastq/BTKskarpa_R2.fastq.gz

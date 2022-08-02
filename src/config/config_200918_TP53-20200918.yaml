@@ -1,0 +1,11 @@
+!!python/object/apply:collections.OrderedDict
+- - - Run
+    - 200918_TP53-20200918
+  - - Samples
+    - !!python/object/apply:collections.defaultdict
+      args:
+      - !!python/name:builtins.dict ''
+      dictitems:
+        4577BTK:
+          fwd: /mnt/nfs/shared/MedGen/sequencing_results/primary_data/200918_TP53-20200918/raw_fastq/4577BTK_R1.fastq.gz
+          rev: /mnt/nfs/shared/MedGen/sequencing_results/primary_data/200918_TP53-20200918/raw_fastq/4577BTK_R2.fastq.gz

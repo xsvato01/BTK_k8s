@@ -1,0 +1,20 @@
+!!python/object/apply:collections.OrderedDict
+- - - Run
+    - 191216_TP53-20191115_AM
+  - - Samples
+    - !!python/object/apply:collections.defaultdict
+      args:
+      - !!python/name:builtins.dict ''
+      dictitems:
+        3397-68stnew1_mixMDS89:
+          fwd: /mnt/nfs/shared/000000-Shared/groups/MedGen/sequencing_results/primary_data/191216_TP53-20191115/raw_fastq/3397-68stnew1_mixMDS89_R1.fastq.gz
+          rev: /mnt/nfs/shared/000000-Shared/groups/MedGen/sequencing_results/primary_data/191216_TP53-20191115/raw_fastq/3397-68stnew1_mixMDS89_R2.fastq.gz
+        3397-68stnew2_mixMDS327:
+          fwd: /mnt/nfs/shared/000000-Shared/groups/MedGen/sequencing_results/primary_data/191216_TP53-20191115/raw_fastq/3397-68stnew2_mixMDS327_R1.fastq.gz
+          rev: /mnt/nfs/shared/000000-Shared/groups/MedGen/sequencing_results/primary_data/191216_TP53-20191115/raw_fastq/3397-68stnew2_mixMDS327_R2.fastq.gz
+        3430-68stnew1_mixMDS180:
+          fwd: /mnt/nfs/shared/000000-Shared/groups/MedGen/sequencing_results/primary_data/191216_TP53-20191115/raw_fastq/3430-68stnew1_mixMDS180_R1.fastq.gz
+          rev: /mnt/nfs/shared/000000-Shared/groups/MedGen/sequencing_results/primary_data/191216_TP53-20191115/raw_fastq/3430-68stnew1_mixMDS180_R2.fastq.gz
+        BTK4134:
+          fwd: /mnt/nfs/shared/000000-Shared/groups/MedGen/sequencing_results/primary_data/191216_TP53-20191115/raw_fastq/BTK4134_R1.fastq.gz
+          rev: /mnt/nfs/shared/000000-Shared/groups/MedGen/sequencing_results/primary_data/191216_TP53-20191115/raw_fastq/BTK4134_R2.fastq.gz

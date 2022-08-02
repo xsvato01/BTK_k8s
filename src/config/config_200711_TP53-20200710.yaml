@@ -1,0 +1,11 @@
+!!python/object/apply:collections.OrderedDict
+- - - Run
+    - 200711_TP53-20200710
+  - - Samples
+    - !!python/object/apply:collections.defaultdict
+      args:
+      - !!python/name:builtins.dict ''
+      dictitems:
+        DuBTK:
+          fwd: /mnt/nfs/shared/MedGen/sequencing_results/primary_data/200711_TP53-20200710/raw_fastq/DuBTK_R1.fastq.gz
+          rev: /mnt/nfs/shared/MedGen/sequencing_results/primary_data/200711_TP53-20200710/raw_fastq/DuBTK_R2.fastq.gz
