@@ -58,7 +58,7 @@ process FIRST_ALIGN_BAM {
 
 process PILE_UP {
 	tag "PILE_UP on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/vcf/varscan2/", pattern: '*.md.ba*', mode:'copy'
+	publishDir "${launchDir}/vcf/", pattern: '*.md.ba*', mode:'copy'
 	
 	input:
 	tuple val(name), path(bam)
@@ -77,14 +77,15 @@ process PILE_UP {
 
 process VARSCAN {
 	tag "VARSCAN on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/vcf/varscan2/", mode:'copy'
+	publishDir "${launchDir}/vcf/", mode:'copy'
 	
 	input:
 	tuple val(name), path(mpileup)
 
 	output:
-	path "*.vcf"
-
+	tuple val(name), path('*.snv.vcf')
+	tuple val(name), path('*.indel.vcf')
+	
 	script:
 	"""
 	varscan mpileup2snp $mpileup \
@@ -100,7 +101,27 @@ process VARSCAN {
 
 
 process VARDICT {
-	tag "VARSCAN on $name using $task.cpus CPUs and $task.memory memory"
+	tag "VARDICT on $name using $task.cpus CPUs and $task.memory memory"
+	publishDir "${launchDir}/vcf/", mode:'copy'
+	
+	input:
+	tuple val(name), path(bam)
+
+	output:
+	path "*.vcf"
+
+	script:
+	"""
+	vardict -G ${params.ref}.fa -f 0.0005 -b ${bam} \
+		-c 1 -S 2 -E 3 -r 8 -Q 1 -q 25 -P 2 -m 8 \
+		${params.varbed} | teststrandbias.R | var2vcf_valid.pl -f 0.0005 -d 50 -c 5 -p 2 -q 25 -Q 1 -v 8 -m 8 -N vardict - > ${name}.vardict.vcf
+	"""
+}
+
+
+
+process NORMALIZE_VARIANTS {
+	tag "Normalizing variants on $name using $task.cpus CPUs and $task.memory memory"
 	publishDir "${launchDir}/vcf/vardict/", mode:'copy'
 	
 	input:
@@ -113,7 +134,7 @@ process VARDICT {
 	"""
 	vardict -G ${params.ref}.fa -f 0.0005 -b ${bam} \
 		-c 1 -S 2 -E 3 -r 8 -Q 1 -q 25 -P 2 -m 8 \
-		
+		${params.varbed} | teststrandbias.R | var2vcf_valid.pl -f 0.0005 -d 50 -c 5 -p 2 -q 25 -Q 1 -v 8 -m 8 -N vardict - > ${name}.vardict.vcf
 	"""
 }
 
@@ -298,23 +319,28 @@ process COVERAGE_R {
 
  
 workflow {
- rawfastq = channel.fromFilePairs("${params.datain}/*R{1,2}*", checkIfExists: true)
+ rawfastq = channel.fromFilePairs("${params.datain}/BTK*R{1,2}*", checkIfExists: true)
 	
-	trimmed		= TRIMMING(rawfastq)
+	trimmed1	= TRIMMING_1(rawfastq)
+	trimmed2	= TRIMMING_2(trimmed2)	
 	sortedbam	= FIRST_ALIGN_BAM(trimmed)
-	qc_files	= FIRST_QC(sortedbam[0])
-	qcdup_file	= MARK_DUPLICATES(sortedbam[0])
-	MULTIQC(qc_files.mix(qcdup_file[0]).collect())
+	pileup		= PILE_UP(sortedbam[0])
+	varscanned	= VARSCAN(pileup)
+	vardicted	= VARDICT(sortedbam[0])
+
+//	qc_files	= FIRST_QC(sortedbam[0])
+//	qcdup_file	= MARK_DUPLICATES(sortedbam[0])
+//	MULTIQC(qc_files.mix(qcdup_file[0]).collect())
 //qc_files.mix(qcdup_file[0]).collect().view()
 //qcdup_file[1].view()
-	raw_vcf         = MUTECT2(qcdup_file[1]) //markdup.bam 
-    filtered        = FILTER_MUTECT(raw_vcf)
-    normalized      = NORMALIZE_MUTECT(filtered)
-    annotated       = ANNOTATE_MUTECT(normalized)
+//	raw_vcf         = MUTECT2(qcdup_file[1]) //markdup.bam 
+  //  filtered        = FILTER_MUTECT(raw_vcf)
+//    normalized      = NORMALIZE_MUTECT(filtered)
+ //   annotated       = ANNOTATE_MUTECT(normalized)
     //CREATE_FULL_TABLE(normalized[0])
-    CREATE_FULL_TABLE(annotated[0])
+//    CREATE_FULL_TABLE(annotated[0])
 
-	pbcov           = COVERAGE(sortedbam[0])
-pbcov.view()   
- COVERAGE_R(pbcov)
+//	pbcov           = COVERAGE(sortedbam[0])
+//pbcov.view()   
+// COVERAGE_R(pbcov)
 }
