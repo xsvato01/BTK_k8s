@@ -12,6 +12,8 @@ dependencies:
   - cutadapt
   - fastqc
   - multiqc
+  - varscan
+  - vardict
   - picard
   - gatk4=4.1.0.0
   - samtools
