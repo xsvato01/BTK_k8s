@@ -1,4 +1,4 @@
-FROM ubuntu:22.04
+FROM condaforge/mambaforge
 
 ENV INSTALL_DIR="/opt"
 
@@ -20,7 +20,7 @@ RUN wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86
 ENV PATH=$CONDA_DIR/bin:$PATH
 # Install the conda environment
 COPY environment.yml /
-RUN conda env create -f /environment.yml && conda clean --all -f -y
+RUN mamba env create -f /environment.yml && conda clean --all -f -y
 
 # Add conda installation dir to PATH (instead of doing 'conda activate')
 ENV PATH /opt/conda/envs/BTK_k8s/bin:$PATH
