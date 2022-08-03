@@ -19,6 +19,7 @@ dependencies:
   - samtools=1.6
   - bcftools=1.8
   - bedtools=2.24.0
+  - openssl=1.0
   - pandas
   - numpy
   - argparse
