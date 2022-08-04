@@ -26,5 +26,5 @@ RUN mamba env create -f /environment.yml && conda clean --all -f -y
 # Add conda installation dir to PATH (instead of doing 'conda activate')
 ENV PATH /opt/conda/envs/BTK_k8s/bin:$PATH
 
-RUN ln -s /opt/conda/lib/libcrypto.so.1.1 /opt/conda/lib/libcrypto.so.1.0.0
+RUN ln -s /opt/conda/envs/BTK_k8s/lib/libcrypto.so.1.1 /opt/conda/envs/BTK_k8s/lib/libcrypto.so.1.0.0
 USER 1000
