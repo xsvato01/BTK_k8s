@@ -1,7 +1,10 @@
-launchDir = "${launchDir}/${params.datain.replaceAll(".*/","")}"
+run = "${params.datain}".split("/")
+run = run[run.size()-2]
+launchDir = "${launchDir}/${run}"
 
 process TRIMMING_1 {
 	tag "trimming 2 on $name using $task.cpus CPUs and $task.memory memory"
+	publishDir  "${launchDir}/trimmed/", mode:'copy'
 	
 	input:
 	tuple val(name), path(reads)
@@ -12,7 +15,7 @@ process TRIMMING_1 {
 	script:
 	""" 
 	cutadapt -a CTGTCTCTTATACACATCT -A CTGTCTCTTATACACATCT \
-		-o ${name}.trimmed.R1.fastq.gz -p ${name}.trimmed.R2.fastq.gz $reads
+		-o ${name}.trimmed1.R1.fastq.gz -p ${name}.trimmed1.R2.fastq.gz $reads
 	"""
 }
 
@@ -32,7 +35,7 @@ process TRIMMING_2 {
 	cutadapt -a CAAGGGGGACTGTAGATGGG...TAGGATCTGACTGCGGCTCC \
 		-A GGAGCCGCAGTCAGATCCTA...CCCATCTACAGTCCCCCTTG \
 		-a ACAACGTTCTGGTAAGGACAX -A TGTCCTTACCAGAACGTTGTX --overlap 4 \
-		-o ${name}.trimmed.R1.fastq.gz -p ${name}.trimmed.R2.fastq.gz $reads
+		-o ${name}.trimmed2.R1.fastq.gz -p ${name}.trimmed2.R2.fastq.gz $reads
 	"""
 }
 
@@ -64,12 +67,12 @@ process PILE_UP {
 	tuple val(name), path(bam)
 
 	output:
-	path "*.mpileup"
+	tuple val(name), path("*.mpileup")
 	
 	script:
 	"""
-	samtools mpileup -x -B -Q 25 -d 999999 -L 999999 -F 0.0005 \
-		-f ${params.ref}.fa $bam > ${name}.mpileup
+	#
+	samtools mpileup -x -B -Q 25 -d 999999 -L 999999 -F 0.0005 -f ${params.ref}.fa $bam > ${name}.mpileup
 	"""
 }
 
@@ -90,11 +93,11 @@ process VARSCAN {
 	"""
 	varscan mpileup2snp $mpileup \
 		--strand-filter 0 --p-value 0.95 --min-coverage 50 --min-reads2 8 --min-avg-qual 25 --min-var-freq 0.0005 \
-		--output-vcf > ${name}.varscan.snv.vcf
+		--output-vcf | sed 's/Sample1/varscan_SNV/g' > ${name}.varscan.snv.vcf
 
 	varscan mpileup2indel $mpileup \
 		 --strand-filter 0 --p-value 0.95 --min-coverage 50 --min-reads2 8 --min-avg-qual 25 --min-var-freq 0.0005 \
-		--output-vcf > ${name}.varscan.indel.vcf
+		--output-vcf | sed 's/Sample1/varscan_INDEL/g' > ${name}.varscan.indel.vcf
 	"""
 }
 
@@ -108,7 +111,7 @@ process VARDICT {
 	tuple val(name), path(bam)
 
 	output:
-	path "*.vcf"
+	tuple val(name), path ("*.vcf")
 
 	script:
 	"""
@@ -122,21 +125,124 @@ process VARDICT {
 
 process NORMALIZE_VARIANTS {
 	tag "Normalizing variants on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/vcf/vardict/", mode:'copy'
+	publishDir "${launchDir}/vcf/", mode:'copy'
 	
 	input:
-	tuple val(name), path(bam)
+	tuple val(name), path (varscan_snv_path)
+	tuple val(name), path (varscan_indel_path)
+	tuple val(name), path (vardict_path)
 
 	output:
-	path "*.vcf"
-
+	tuple val(name), path ("*varscan.snv.norm.vcf")
+	tuple val(name), path ("*varscan.indel.norm.vcf")
+	tuple val(name), path ("*.vardict.norm.vcf")
+	
 	script:
 	"""
-	vardict -G ${params.ref}.fa -f 0.0005 -b ${bam} \
-		-c 1 -S 2 -E 3 -r 8 -Q 1 -q 25 -P 2 -m 8 \
-		${params.varbed} | teststrandbias.R | var2vcf_valid.pl -f 0.0005 -d 50 -c 5 -p 2 -q 25 -Q 1 -v 8 -m 8 -N vardict - > ${name}.vardict.vcf
+	bcftools -v
+	bcftools norm -f ${params.ref}.fa $varscan_snv_path -o ${name}.varscan.snv.norm.vcf
+	bcftools norm -f ${params.ref}.fa $varscan_indel_path -o ${name}.varscan.indel.norm.vcf
+	bcftools norm -f ${params.ref}.fa $vardict_path -o ${name}.vardict.norm.vcf
+	
 	"""
 }
+
+
+process MERGE_VARIANTS {
+	tag "Merging variants on $name using $task.cpus CPUs and $task.memory memory"
+	publishDir "${launchDir}/vcf/", mode:'copy'
+	
+	input:
+	tuple val(name), path (varscan_snv_norm_path)
+	tuple val(name), path (varscan_indel_norm_path)
+	tuple val(name), path (vardict_norm_path)
+
+	output:
+	tuple val(name), path ("*allcallers.merged.vcf")
+	
+	script:
+	"""
+	java -jar ${params.gatk36} -T CombineVariants --variant:vardict ${vardict_norm_path} \
+		--variant:varscan_SNV ${varscan_snv_norm_path} \
+		--variant:varscan_INDEL ${varscan_indel_norm_path} \
+		-R ${params.ref}.fa -genotypeMergeOptions UNSORTED \
+		--disable_auto_index_creation_and_locking_when_reading_rods -o ${name}.allcallers.merged.vcf
+	"""
+}
+
+
+
+process NORMALIZE_MERGED_VARIANTS {
+	tag "Normalizing merged variants on $name using $task.cpus CPUs and $task.memory memory"
+	publishDir "${launchDir}/vcf/", mode:'copy'
+	
+	input:
+	tuple val(name), path (merged_vcf)
+
+	output:
+	tuple val(name), path ("*allmerged.norm.vcf")
+	
+	script:
+	"""
+	bcftools norm -f ${params.ref}.fa $merged_vcf -o ${name}.allmerged.norm.vcf
+	"""
+}
+
+
+process ANNOTATE {
+	tag "Annotating variants on $name using $task.cpus CPUs and $task.memory memory"
+	publishDir "${launchDir}/annotate/", mode:'copy'
+	
+	input:
+	tuple val(name), path (merged_normed_vcf)
+
+	output:
+	tuple val(name), path ("*allmerged.norm.annot.vcf")
+	
+	script:
+	"""
+	vep -i $merged_normed_vcf --cache --cache_version 95 --dir_cache $params.vep \
+	--fasta ${params.ref}.fa --merged --offline --vcf --hgvs --sift b --polyphen b -o ${name}.allmerged.norm.annot.vcf
+  
+	"""
+}
+
+
+
+process NORMALIZE_VEP {
+	tag "Normalizing annotated variants on $name using $task.cpus CPUs and $task.memory memory"
+	publishDir "${launchDir}/annotate/", mode:'copy'
+	
+	input:
+	tuple val(name), path(annotated)
+
+	output:
+	tuple val(name), path("*allmerged.norm.annot.norm.vcf")
+	
+	script:
+	"""
+	biopet tool VepNormalizer -I $annotated -O ${name}.allmerged.norm.annot.norm.vcf -m explode  
+	"""
+}
+
+
+process CREATE_TXT {
+	tag "Simplify annotated table on $name using $task.cpus CPUs and $task.memory memory"
+	publishDir "${launchDir}/annotate/", mode:'copy'
+	
+	input:
+	tuple val(name), path(annotated_normed)
+
+	//output:
+	//tuple val(name), path("*.txt")
+	
+	script:
+	"""
+	python 
+	#python ${params.vcf_simplify} SimplifyVCF -toType table -inVCF $annotated_normed -out ${name}.annotated.norm.txt  
+	"""
+}
+
 
 
 process FIRST_QC {
@@ -158,189 +264,20 @@ process FIRST_QC {
 	"""
 }
 
-process MARK_DUPLICATES {
-	tag "Mark duplicates on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/first_bam_qc/", pattern: '*.txt', mode:'copy'
-	publishDir "${launchDir}/mapped/", pattern: '*.md.ba*', mode:'copy'
-	
-	input:
-	tuple val(name), path(bam)
-
-	output:
-	path "*.txt"
-	tuple val(name), path("*first.md.bam")
-	path "*.bai"
-
-	script:
-	"""
-	picard MarkDuplicates I=$bam M=${name}.MD.metrics.txt O=${name}.first.md.bam
-	samtools index ${name}.first.md.bam
-	"""
-}
-
-process MULTIQC {
-	tag "MultiQC on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/multiqc_reports/", mode:'copy'
-	
-	input:
-	path '*'
-
-	output:
-	path 'first_report.html'
-
-	script:
-	"""
-	export LC_ALL=C.UTF-8
-	export LANG=C.UTF-8
-	multiqc . -n first_report.html
-	"""
-}
-
-process MUTECT2 {
-	tag "MUTECT2 on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/variants/", mode:'copy'
-	
-	input:
-	tuple val(name), path(bam)
-	
-	output:
-	tuple val(name), path ('*.vcf')
-
-	script:
-	"""
-	gatk Mutect2 --reference ${params.ref}.fa --input ${bam} --annotation StrandArtifact --min-base-quality-score 30 --intervals $params.varbed  --output ${name}.mutect.vcf
-	"""
-
-}
-
-process FILTER_MUTECT {
-	tag "filter mutect on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/variants/", mode:'copy'
-	
-	input:
-	tuple val(name), path(vcf_input)
-	
-	output:
-	tuple val(name), path ('*.vcf')
-
-	script:
-	"""
-	gatk FilterMutectCalls -V $vcf_input -O ${name}.mutect.filt.vcf
-	"""
-
-}
-
-process NORMALIZE_MUTECT {
-	tag "normalize filtered mutect on $name using $task.cpus CPUs $task.memory"
-	publishDir "${launchDir}/variants/", mode:'copy'
-	
-	input:
-	tuple val(name), path(vcf_input)
-	
-	output:
-	tuple val(name), path ('*.vcf')
-
-	script:
-	"""
-	bcftools norm -m-both $vcf_input > ${name}.mutect.filt.norm.vcf
-	"""
-}
-
-process ANNOTATE_MUTECT {
-	tag "annotate mutect on $name using $task.cpus CPUs $task.memory"
-	publishDir "${launchDir}/variants/", mode:'copy'
-	
-	input:
-	tuple val(name), path(vcf_input)
-	
-	output:
-	tuple val(name), path('*.vcf')
-	path '*.csv'
-	script:
-	"""
-	vep -i $vcf_input --cache --cache_version 90 --dir_cache $params.vep \
-	--fasta ${params.ref}.fa --merged --offline --vcf --everything -o ${name}.mutect2.filt.norm.vep.vcf
-
-	bcftools view -f 'PASS,clustered_events' ${name}.mutect2.filt.norm.vep.vcf \
-	| python $params.vcftbl simple --build GRCh38 -i /dev/stdin -t ${name} > ${name}.mutect2.filt.norm.vep.csv
-
-	"""	
-}
-
-process CREATE_FULL_TABLE {
-	tag "creating full table on $name using $task.cpus CPUs $task.memory"
-	publishDir "${launchDir}/variants/", mode:'copy'
-	
-	input:
-	tuple val(name), path(vcf_input)
-	
-	output:
-	path '*'
-
-	script:
-	"""
-	python $params.vcftbl simple --build GRCh38 -i $vcf_input -t ${name} > ${name}.mutect2.filt.norm.vep.full.csv
-	"""	
-}
-
-process COVERAGE {
-	tag "calculating coverage on $name using $task.cpus CPUs $task.memory"
-	publishDir "${launchDir}/coverage/", mode:'copy'
-	
-	input:
-	tuple val(name), path(bam)
-	
-	output:
-	tuple val(name), path('*.PBcov.txt')
-
-	script:
-	"""
-	bedtools coverage -abam $params.covbed -b $bam -d > ${name}.PBcov.txt
-	"""	
-}
-
-
-process COVERAGE_R {
-	tag "R coverage on $name using $task.cpus CPUs $task.memory"
-	publishDir "${launchDir}/coverage/", mode:'copy'
-	
-	input:
-	tuple val(name), path(pbcov)
-	
-	output:
-	path '*'
-
-	script:
-	"""
-	Rscript --vanilla $params.coverstat $pbcov >> ${name}_CXCR4.txt
-	"""
-}
-
-
  
 workflow {
  rawfastq = channel.fromFilePairs("${params.datain}/BTK*R{1,2}*", checkIfExists: true)
-	
 	trimmed1	= TRIMMING_1(rawfastq)
-	trimmed2	= TRIMMING_2(trimmed2)	
-	sortedbam	= FIRST_ALIGN_BAM(trimmed)
+	trimmed2	= TRIMMING_2(trimmed1)	
+	
+	sortedbam	= FIRST_ALIGN_BAM(trimmed2)
 	pileup		= PILE_UP(sortedbam[0])
 	varscanned	= VARSCAN(pileup)
 	vardicted	= VARDICT(sortedbam[0])
-
-//	qc_files	= FIRST_QC(sortedbam[0])
-//	qcdup_file	= MARK_DUPLICATES(sortedbam[0])
-//	MULTIQC(qc_files.mix(qcdup_file[0]).collect())
-//qc_files.mix(qcdup_file[0]).collect().view()
-//qcdup_file[1].view()
-//	raw_vcf         = MUTECT2(qcdup_file[1]) //markdup.bam 
-  //  filtered        = FILTER_MUTECT(raw_vcf)
-//    normalized      = NORMALIZE_MUTECT(filtered)
- //   annotated       = ANNOTATE_MUTECT(normalized)
-    //CREATE_FULL_TABLE(normalized[0])
-//    CREATE_FULL_TABLE(annotated[0])
-
-//	pbcov           = COVERAGE(sortedbam[0])
-//pbcov.view()   
-// COVERAGE_R(pbcov)
+	normalized	= NORMALIZE_VARIANTS(varscanned,vardicted)
+	merged		= MERGE_VARIANTS(normalized)
+	norm_merged	= NORMALIZE_MERGED_VARIANTS(merged)
+	annotated	= ANNOTATE(norm_merged)
+	annot_norm	= NORMALIZE_VEP(annotated)
+	txt		= CREATE_TXT(annot_norm)
 }
