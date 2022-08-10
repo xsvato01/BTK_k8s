@@ -5,6 +5,7 @@ channels:
   - conda-forge
   - bioconda
   - defaults
+  - r
 dependencies:
   - ensembl-vep=96.0
   - bwa=0.7.17
@@ -15,7 +16,6 @@ dependencies:
   - fastqc
   - multiqc
   - picard
-  - gatk4=4.1.0.0
   - samtools=1.6
   - bcftools=1.8
   - bedtools=2.24.0
@@ -27,3 +27,4 @@ dependencies:
   - r-base=3.6.0
   - r-data.table=1.13.6
   - r-r.utils
+  - r-tidyr
