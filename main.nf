@@ -4,7 +4,7 @@ launchDir = "${launchDir}/${run}"
 
 process TRIMMING_1 {
 	tag "trimming 2 on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir  "${launchDir}/trimmed/", mode:'copy'
+	publishDir  "${launchDir}/${name}/trimmed/", mode:'copy'
 	
 	input:
 	tuple val(name), path(reads)
@@ -22,7 +22,7 @@ process TRIMMING_1 {
 
 process TRIMMING_2 {
 	tag "trimming 2 on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir  "${launchDir}/trimmed/", mode:'copy'
+	publishDir  "${launchDir}/${name}/trimmed/", mode:'copy'
 	
 	input:
 	tuple val(name), path(reads)
@@ -41,7 +41,7 @@ process TRIMMING_2 {
 
 process FIRST_ALIGN_BAM {
 	tag "first align on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/mapped/", mode:'copy'
+	publishDir "${launchDir}/${name}/mapped/", mode:'copy'
 	
 	input:
 	tuple val(name), path(reads)
@@ -61,7 +61,7 @@ process FIRST_ALIGN_BAM {
 
 process PILE_UP {
 	tag "PILE_UP on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/vcf/", pattern: '*.md.ba*', mode:'copy'
+	publishDir "${launchDir}/${name}/vcf/", pattern: '*.md.ba*', mode:'copy'
 	
 	input:
 	tuple val(name), path(bam)
@@ -80,7 +80,7 @@ process PILE_UP {
 
 process VARSCAN {
 	tag "VARSCAN on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/vcf/", mode:'copy'
+	publishDir "${launchDir}/${name}/vcf/", mode:'copy'
 	
 	input:
 	tuple val(name), path(mpileup)
@@ -105,7 +105,7 @@ process VARSCAN {
 
 process VARDICT {
 	tag "VARDICT on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/vcf/", mode:'copy'
+	publishDir "${launchDir}/${name}/vcf/", mode:'copy'
 	
 	input:
 	tuple val(name), path(bam)
@@ -125,7 +125,7 @@ process VARDICT {
 
 process NORMALIZE_VARIANTS {
 	tag "Normalizing variants on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/vcf/", mode:'copy'
+	publishDir "${launchDir}/${name}/vcf/", mode:'copy'
 	
 	input:
 	tuple val(name), path (varscan_snv_path)
@@ -150,7 +150,7 @@ process NORMALIZE_VARIANTS {
 
 process MERGE_VARIANTS {
 	tag "Merging variants on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/vcf/", mode:'copy'
+	publishDir "${launchDir}/${name}/vcf/", mode:'copy'
 	
 	input:
 	tuple val(name), path (varscan_snv_norm_path)
@@ -174,7 +174,7 @@ process MERGE_VARIANTS {
 
 process NORMALIZE_MERGED_VARIANTS {
 	tag "Normalizing merged variants on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/vcf/", mode:'copy'
+	publishDir "${launchDir}/${name}/vcf/", mode:'copy'
 	
 	input:
 	tuple val(name), path (merged_vcf)
@@ -191,7 +191,7 @@ process NORMALIZE_MERGED_VARIANTS {
 
 process ANNOTATE {
 	tag "Annotating variants on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/annotate/", mode:'copy'
+	publishDir "${launchDir}/${name}/annotate/", mode:'copy'
 	
 	input:
 	tuple val(name), path (merged_normed_vcf)
@@ -211,7 +211,7 @@ process ANNOTATE {
 
 process NORMALIZE_VEP {
 	tag "Normalizing annotated variants on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/annotate/", mode:'copy'
+	publishDir "${launchDir}/${name}/annotate/", mode:'copy'
 	
 	input:
 	tuple val(name), path(annotated)
@@ -287,15 +287,15 @@ process COVERAGE_STATS {
 }
 
 
-process FIRST_QC {
+process MULTIQC {
 	tag "first QC on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/coverage/", mode:'copy'
+	publishDir "${launchDir}/${name}/coverage/", mode:'copy'
 	
 	input:
 	tuple val(name), path(bam)
 
 	output:
-	path "*"
+	path "report.html"
 
 	script:
 	"""
@@ -311,6 +311,7 @@ process FIRST_QC {
  
 workflow {
  rawfastq = channel.fromFilePairs("${params.datain}/BTK*R{1,2}*", checkIfExists: true)
+ 
 	trimmed1	= TRIMMING_1(rawfastq)
 	trimmed2	= TRIMMING_2(trimmed1)	
 	sortedbam	= FIRST_ALIGN_BAM(trimmed2)
@@ -327,5 +328,5 @@ workflow {
 
 	covered		= COVERAGE(sortedbam[0])
 	COVERAGE_STATS(covered)					
-	FIRST_QC(sortedbam[0])	
+	MULTIQC(sortedbam[0])	
 }
