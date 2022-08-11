@@ -1,2 +1,2 @@
-nextflow kuberun xsvato01/mareckova_CXCR_k8s -pod-image 'cerit.io/nextflow/nextflow:22.06.1'\
-	-resume -c zaloha_nextflow.config --datain /mnt/home/450402/000000-My_Documents/mareckova_data
+nextflow kuberun xsvato01/BTK_k8s -pod-image 'cerit.io/nextflow/nextflow:22.06.1'\
+	-resume -c zaloha_nextflow.config --datain /mnt/shared/MedGen/sequencing_results/primary_data/220708_TP53_20220708/rawfastq

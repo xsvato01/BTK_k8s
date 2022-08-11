@@ -233,21 +233,63 @@ process CREATE_TXT {
 	input:
 	tuple val(name), path(annotated_normed)
 
-	//output:
-	//tuple val(name), path("*.txt")
+	output:
+	tuple val(name), path("*.norm.merged.annot.normVEP.txt")
 	
 	script:
 	"""
-	python 
-	#python ${params.vcf_simplify} SimplifyVCF -toType table -inVCF $annotated_normed -out ${name}.annotated.norm.txt  
+	python ${params.vcf_simplify} SimplifyVCF -toType table -inVCF $annotated_normed -out ${name}.norm.merged.annot.normVEP.txt  
 	"""
 }
 
 
+process CREATE_FINAL_TABLE {
+	tag "Creating final table on $name using $task.cpus CPUs and $task.memory memory"
+	publishDir "${launchDir}/annotate/", mode:'copy'
+	
+	input:
+	tuple val(name), path(annotated_normed)
+	
+	script:
+	"""
+	Rscript --vanilla ${params.create_table} ${launchDir}/annotate $run  
+	"""
+}
+
+
+process COVERAGE {
+	tag "Creating coverage on $name using $task.cpus CPUs and $task.memory memory"
+	publishDir "${launchDir}/coverage/", mode:'copy'
+	
+	input:
+	tuple val(name), path(bam)
+
+	output:
+	tuple val(name), path("*.txt")
+	
+	script:
+	"""
+	bedtools coverage -abam ${params.covbed} -b $bam -d > ${name}.PBcoverage.txt   
+	"""
+}
+
+process COVERAGE_STATS {
+	tag "Creating coverage stats on $name using $task.cpus CPUs and $task.memory memory"
+	publishDir "${launchDir}/coverage/", mode:'copy'
+	
+	input:
+	tuple val(name), path(annotated_normed)
+	
+	script:
+	"""
+	Rscript --vanilla ${params.coverstat} ${launchDir}/coverage $run  
+	"""
+}
+
 
 process FIRST_QC {
 	tag "first QC on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/first_bam_qc/", mode:'copy'
+	publishDir "${launchDir}/coverage/", mode:'copy'
 	
 	input:
 	tuple val(name), path(bam)
@@ -259,9 +301,11 @@ process FIRST_QC {
 	"""
 	samtools flagstat $bam > ${name}.flagstat
 	samtools stats $bam > ${name}.samstats
-        picard BedToIntervalList I=${params.covbed} O=${name}.interval_list SD=${params.ref}.dict
-	picard CollectHsMetrics I=$bam BAIT_INTERVALS=${name}.interval_list TARGET_INTERVALS=${name}.interval_list R=${params.ref}.fa O=${name}.aln_metrics
+        picard BedToIntervalList -I ${params.covbedpicard} -O ${name}.interval_list -SD ${params.ref}.dict
+	picard CollectHsMetrics -I $bam -BAIT_INTERVALS ${name}.interval_list -TARGET_INTERVALS ${name}.interval_list -R ${params.ref}.fa -O ${name}.aln_metrics
+	multiqc . -n report.html
 	"""
+
 }
 
  
@@ -269,7 +313,6 @@ workflow {
  rawfastq = channel.fromFilePairs("${params.datain}/BTK*R{1,2}*", checkIfExists: true)
 	trimmed1	= TRIMMING_1(rawfastq)
 	trimmed2	= TRIMMING_2(trimmed1)	
-	
 	sortedbam	= FIRST_ALIGN_BAM(trimmed2)
 	pileup		= PILE_UP(sortedbam[0])
 	varscanned	= VARSCAN(pileup)
@@ -280,4 +323,9 @@ workflow {
 	annotated	= ANNOTATE(norm_merged)
 	annot_norm	= NORMALIZE_VEP(annotated)
 	txt		= CREATE_TXT(annot_norm)
+	final_table	= CREATE_FINAL_TABLE(txt)
+
+	covered		= COVERAGE(sortedbam[0])
+	COVERAGE_STATS(covered)					
+	FIRST_QC(sortedbam[0])	
 }
