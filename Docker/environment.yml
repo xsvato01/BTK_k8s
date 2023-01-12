@@ -13,7 +13,7 @@ dependencies:
   - cutadapt=1.18
   - vardict=2018.10.18
   - varscan=2.4.3
-  #- gatk4=4.1.0.0
+  - gatk4=4.1.0.0
   - fastqc
   - multiqc
   - picard
