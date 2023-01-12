@@ -5,7 +5,7 @@ path<-args[1]
 
 final_list<-list()
 for(i in list.files(path, pattern = "*PBcoverage.txt")){
-  
+  print(i)
   # table of per base coverage for each sample (to paste together to one table)
   file <- read.table(paste0(path,"/",i), sep="\t")
   colnames(file) <- c("Chrom", "Exon", "K_NICEMU", "Start", "End", "K_NICEMU2", "STRAND", "K_NICEMU3", "Base_number", "Coverage")

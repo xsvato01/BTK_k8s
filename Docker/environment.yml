@@ -13,19 +13,20 @@ dependencies:
   - cutadapt=1.18
   - vardict=2018.10.18
   - varscan=2.4.3
-  - gatk4=4.1.0.0
+  #- gatk4=4.1.0.0
   - fastqc
   - multiqc
   - picard
   - samtools=1.6
   - bcftools=1.8
   - bedtools=2.24.0
-  - pandas
-  - numpy
+  - pandas>=0.24.2
+  - numpy>=1.16.2
   - argparse
-  - pyvcf
+  - pyvcf>=0.6.8
   - cyvcf2=0.10
   - r-base=3.6.0
   - r-data.table=1.13.6
   - r-r.utils
   - r-tidyr
+  - pysam>=0.15.2

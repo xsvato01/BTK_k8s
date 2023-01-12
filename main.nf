@@ -3,7 +3,7 @@ run = run[run.size()-2]
 launchDir = "${launchDir}/${run}"
 
 process TRIMMING_1 {
-	tag "trimming 2 on $name using $task.cpus CPUs and $task.memory memory"
+	tag "trimming 1 on $name using $task.cpus CPUs and $task.memory memory"
 	publishDir  "${launchDir}/${name}/trimmed/", mode:'copy'
 	
 	input:
@@ -109,6 +109,8 @@ process VARDICT {
 	
 	input:
 	tuple val(name), path(bam)
+	tuple val(name), path(bai)
+
 
 	output:
 	tuple val(name), path ("*.vcf")
@@ -117,7 +119,7 @@ process VARDICT {
 	"""
 	vardict -G ${params.ref}.fa -f 0.0005 -b ${bam} \
 		-c 1 -S 2 -E 3 -r 8 -Q 1 -q 25 -P 2 -m 8 \
-		${params.varbed} | teststrandbias.R | var2vcf_valid.pl -f 0.0005 -d 50 -c 5 -p 2 -q 25 -Q 1 -v 8 -m 8 -N vardict - > ${name}.vardict.vcf
+		${params.varbed} | Rscript --vanilla ${params.teststrandbias} | perl ${params.var2vcf_valid} -f 0.0005 -d 50 -c 5 -p 2 -q 25 -Q 1 -v 8 -m 8 -N vardict - > ${name}.vardict.vcf
 	"""
 }
 
@@ -202,28 +204,59 @@ process ANNOTATE {
 	script:
 	"""
 	vep -i $merged_normed_vcf --cache --cache_version 95 --dir_cache $params.vep \
-	--fasta ${params.ref}.fa --merged --offline --vcf --hgvs --sift b --polyphen b -o ${name}.allmerged.norm.annot.vcf
+	--fasta ${params.ref}.fa --merged --offline --vcf --everything -o ${name}.allmerged.norm.annot.vcf
   
 	"""
 }
 
 
 
-process NORMALIZE_VEP {
-	tag "Normalizing annotated variants on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/${name}/annotate/", mode:'copy'
+// process NORMALIZE_VEP {
+// 	tag "Normalizing annotated variants on $name using $task.cpus CPUs and $task.memory memory"
+// 	publishDir "${launchDir}/${name}/annotate/", mode:'copy'
 	
-	input:
-	tuple val(name), path(annotated)
+// 	input:
+// 	tuple val(name), path(annotated)
 
-	output:
-	tuple val(name), path("*allmerged.norm.annot.norm.vcf")
+// 	output:
+// 	tuple val(name), path("*allmerged.norm.annot.norm.vcf")
 	
-	script:
-	"""
-	biopet tool VepNormalizer -I $annotated -O ${name}.allmerged.norm.annot.norm.vcf -m explode  
-	"""
-}
+// 	script:
+// 	"""
+// 	biopet tool VepNormalizer -I $annotated -O ${name}.allmerged.norm.annot.norm.vcf -m explode  
+// 	"""
+// }
+
+
+// process CREATE_TXT {
+// 	tag "Simplify annotated table on $name using $task.cpus CPUs and $task.memory memory"
+// 	publishDir "${launchDir}/annotate/", mode:'copy'
+	
+// 	input:
+// 	tuple val(name), path(annotated_normed)
+
+// 	output:
+// 	tuple val(name), path("*.norm.merged.annot.normVEP.txt")
+	
+// 	script:
+// 	"""
+// 	python ${params.vcf_simplify} SimplifyVCF -toType table -inVCF $annotated_normed -out ${name}.norm.merged.annot.normVEP.txt  
+// 	"""
+// }
+
+
+// process CREATE_FINAL_TABLE {
+// 	tag "Creating final table on $name using $task.cpus CPUs and $task.memory memory"
+// 	publishDir "${launchDir}/annotate/", mode:'copy'
+	
+// 	input:
+// 	tuple val(name), path(annotated_normed)
+	
+// 	script:
+// 	"""
+// 	Rscript --vanilla ${params.create_table} ${launchDir}/annotate $run  
+// 	"""
+// }
 
 
 process CREATE_TXT {
@@ -238,24 +271,23 @@ process CREATE_TXT {
 	
 	script:
 	"""
-	python ${params.vcf_simplify} SimplifyVCF -toType table -inVCF $annotated_normed -out ${name}.norm.merged.annot.normVEP.txt  
+	bcftools norm -m-both $annotated_normed > ${name}.allmerged.norm.vcf
+	python ${params.vcf2table_simple_mode} SimplifyVCF -toType table -inVCF $annotated_normed -out ${name}.norm.merged.annot.normVEP.txt  
 	"""
 }
 
-
-process CREATE_FINAL_TABLE {
-	tag "Creating final table on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/annotate/", mode:'copy'
+// process CREATE_FINAL_TABLE {
+// 	tag "Creating final table on $name using $task.cpus CPUs and $task.memory memory"
+// 	publishDir "${launchDir}/annotate/", mode:'copy'
 	
-	input:
-	tuple val(name), path(annotated_normed)
+// 	input:
+// 	tuple val(name), path(annotated_normed)
 	
-	script:
-	"""
-	Rscript --vanilla ${params.create_table} ${launchDir}/annotate $run  
-	"""
-}
-
+// 	script:
+// 	"""
+// 	Rscript --vanilla ${params.create_table} ${launchDir}/annotate $run  
+// 	"""
+// }
 
 process COVERAGE {
 	tag "Creating coverage on $name using $task.cpus CPUs and $task.memory memory"
@@ -278,7 +310,7 @@ process COVERAGE_STATS {
 	publishDir "${launchDir}/coverage/", mode:'copy'
 	
 	input:
-	tuple val(name), path(annotated_normed)
+	tuple val(name), path(whatever_navaznost)
 	
 	script:
 	"""
@@ -310,14 +342,14 @@ process MULTIQC {
 
  
 workflow {
- rawfastq = channel.fromFilePairs("${params.datain}/BTK*R{1,2}*", checkIfExists: true)
+ rawfastq = channel.fromFilePairs("${params.datain}/CLL*R{1,2}*", checkIfExists: true)
  
 	trimmed1	= TRIMMING_1(rawfastq)
 	trimmed2	= TRIMMING_2(trimmed1)	
 	sortedbam	= FIRST_ALIGN_BAM(trimmed2)
 	pileup		= PILE_UP(sortedbam[0])
 	varscanned	= VARSCAN(pileup)
-	vardicted	= VARDICT(sortedbam[0])
+	vardicted	= VARDICT(sortedbam[0],sortedbam[1])
 	normalized	= NORMALIZE_VARIANTS(varscanned,vardicted)
 	merged		= MERGE_VARIANTS(normalized)
 	norm_merged	= NORMALIZE_MERGED_VARIANTS(merged)
