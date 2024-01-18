@@ -18,7 +18,7 @@ dependencies:
   - multiqc
   - picard
   - samtools
-  - bcftools=1.8
+  - bcftools
   - bedtools
   - pandas
   - numpy
