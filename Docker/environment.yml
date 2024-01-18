@@ -10,7 +10,7 @@ dependencies:
   - ensembl-vep=96.0
   - bwa=0.7.17
   - biopet=0.9.0
-  - cutadapt=1.18
+  - cutadapt=1.16
   - vardict=2018.10.18
   - varscan=2.4.3
   - gatk4=4.1.0.0
