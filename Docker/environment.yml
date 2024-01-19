@@ -8,25 +8,25 @@ channels:
   - r
 dependencies:
   - ensembl-vep=96.0
-  - bwa
-  - biopet
-  - cutadapt
-  - vardict=2018.10.18
-  - varscan=2.4.3
-  - gatk4=4.1.0.0
-  - fastqc
-  - multiqc
-  - picard
+  #  - bwa
+  #  - biopet
+  #  - cutadapt
+  #  - vardict=2018.10.18
+  #  - varscan=2.4.3
+  #  - gatk4=4.1.0.0
+  #  - fastqc
+  #  - multiqc
+  #  - picard
   - samtools
   - bcftools
   - bedtools
-  - pandas
-  - numpy
-  - argparse
-  - pyvcf
-  - cyvcf2
-  - r-base=3.6.0
-  - r-data.table=1.13.6
-  - r-r.utils
-  - r-tidyr
-  - pysam
+#  - pandas
+#  - numpy
+#  - argparse
+#  - pyvcf
+#  - cyvcf2
+#  - r-base=3.6.0
+#  - r-data.table=1.13.6
+#  - r-r.utils
+# - r-tidyr
+#  - pysam
