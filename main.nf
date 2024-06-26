@@ -1,364 +1,293 @@
-run = "${params.datain}".split("/")
-run = run[run.size()-2]
-launchDir = "${launchDir}/${run}"
+process COLLECT_BASECALLED {
+	tag "COLLECT_BASECALLED on $sample.name using $task.cpus CPUs and $task.memory memory"
+	label "small_process"
 
-process TRIMMING_1 {
-	tag "trimming 1 on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir  "${launchDir}/${name}/trimmed/", mode:'copy'
-	
 	input:
-	tuple val(name), path(reads)
+	val(sample)
 
 	output:
-	tuple val(name), path("*.fastq.gz")
+	tuple val(sample), path("*.fastq.gz")
 
 	script:
-	""" 
-	cutadapt -a CTGTCTCTTATACACATCT -A CTGTCTCTTATACACATCT \
-		-o ${name}.trimmed1.R1.fastq.gz -p ${name}.trimmed1.R2.fastq.gz $reads
 	"""
-}
+	echo COLLECT_BASECALLED $sample.name
+	cp  /mnt/share/710000-CEITEC/713000-cmm/713003-pospisilova/base/sequencing_results/primary_data/*${sample.run}/raw_fastq/${sample.name}* ./
+	"""
+} 
 
 
-process TRIMMING_2 {
-	tag "trimming 2 on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir  "${launchDir}/${name}/trimmed/", mode:'copy'
+process TRIMMING {
+	tag "trimming on $sample.name using $task.cpus CPUs and $task.memory memory"
+	label "small_process"
 	
 	input:
-	tuple val(name), path(reads)
+	tuple val(sample), path(reads)
 
 	output:
-	tuple val(name), path("*.fastq.gz")
+	tuple val(sample), path("*.fastq.gz")
 
 	script:
 	""" 
-	cutadapt -a CAAGGGGGACTGTAGATGGG...TAGGATCTGACTGCGGCTCC \
-		-A GGAGCCGCAGTCAGATCCTA...CCCATCTACAGTCCCCCTTG \
-		-a ACAACGTTCTGGTAAGGACAX -A TGTCCTTACCAGAACGTTGTX --overlap 4 \
-		-o ${name}.trimmed2.R1.fastq.gz -p ${name}.trimmed2.R2.fastq.gz $reads
+	cutadapt -m 50 -o ${sample.name}.trimmed.R1.fastq.gz -p ${sample.name}.trimmed.R2.fastq.gz $reads
 	"""
 }
 
 process FIRST_ALIGN_BAM {
-	tag "first align on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/${name}/mapped/", mode:'copy'
-	
+	tag "first align on $sample.name using $task.cpus CPUs and $task.memory memory"
+	publishDir "${params.outDirectory}/${sample.run}/mapped/", mode:'copy'
+	label "medium_cpu"
+	label "large_mem"
+
 	input:
-	tuple val(name), path(reads)
+	tuple val(sample), path(reads)
 
 	output:
-        tuple val(name), path("${name}.sorted.bam")
-	tuple val(name), path("${name}.sorted.bai")
+	tuple val(sample), path("${sample.name}.sorted.bam")
+	tuple val(sample), path("${sample.name}.sorted.bai")
 
 	script:
-	rg = "\"@RG\\tID:${name}\\tSM:${name}\\tLB:${name}\\tPL:ILLUMINA\""
+	rg = "\"@RG\\tID:${sample.name}\\tSM:${sample.name}\\tLB:${sample.name}\\tPL:ILLUMINA\""
 	"""
 	bwa mem -R ${rg} -t 4 ${params.refindex} $reads \
-	| samtools view -Sb -o - -| samtools sort -o ${name}.sorted.bam
-	samtools index ${name}.sorted.bam ${name}.sorted.bai	
+	| samtools view -Sb -o - - | samtools sort -o ${sample.name}.sorted.bam
+	samtools index ${sample.name}.sorted.bam ${sample.name}.sorted.bai	
 	"""
 }
 
-process PILE_UP {
-	tag "PILE_UP on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/${name}/vcf/", pattern: '*.md.ba*', mode:'copy'
+process FIRST_QC {
+	tag "first QC on $sample.name using $task.cpus CPUs and $task.memory memory"
+	label "smallest_process"
+	container 'registry.gitlab.ics.muni.cz:443/450402/btk_k8s:16'	
 	
 	input:
-	tuple val(name), path(bam)
+	tuple val(sample), path(bam)
 
 	output:
-	tuple val(name), path("*.mpileup")
-	
+	path "*"
+
 	script:
 	"""
-	#
-	samtools mpileup -x -B -Q 25 -d 999999 -L 999999 -F 0.0005 -f ${params.ref}.fa $bam > ${name}.mpileup
+	samtools flagstat $bam > ${sample.name}.flagstat
+	samtools stats $bam > ${sample.name}.samstats
+	picard BedToIntervalList I=${params.covbed} O=${sample.name}.interval_list SD=${params.ref}.dict
+	picard CollectHsMetrics I=$bam BAIT_INTERVALS=${sample.name}.interval_list TARGET_INTERVALS=${sample.name}.interval_list R=${params.ref}.fasta O=${sample.name}.aln_metrics
 	"""
 }
 
+process MARK_DUPLICATES {
+	tag "Mark duplicates on $sample.name using $task.cpus CPUs and $task.memory memory"
+	label "small_process"
 
-
-process VARSCAN {
-	tag "VARSCAN on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/${name}/vcf/", mode:'copy'
-	
 	input:
-	tuple val(name), path(mpileup)
+	tuple val(sample), path(bam)
 
 	output:
-	tuple val(name), path('*.snv.vcf')
-	tuple val(name), path('*.indel.vcf')
-	
-	script:
-	"""
-	varscan mpileup2snp $mpileup \
-		--strand-filter 0 --p-value 0.95 --min-coverage 50 --min-reads2 8 --min-avg-qual 25 --min-var-freq 0.0005 \
-		--output-vcf | sed 's/Sample1/varscan_SNV/g' > ${name}.varscan.snv.vcf
-
-	varscan mpileup2indel $mpileup \
-		 --strand-filter 0 --p-value 0.95 --min-coverage 50 --min-reads2 8 --min-avg-qual 25 --min-var-freq 0.0005 \
-		--output-vcf | sed 's/Sample1/varscan_INDEL/g' > ${name}.varscan.indel.vcf
-	"""
-}
-
-
-
-process VARDICT {
-	tag "VARDICT on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/${name}/vcf/", mode:'copy'
-	
-	input:
-	tuple val(name), path(bam)
-	tuple val(name), path(bai)
-
-
-	output:
-	tuple val(name), path ("*.vcf")
+	path "*.txt"
+	tuple val(sample), path("*first.md.bam")
+	path "*.bai"
 
 	script:
 	"""
-	vardict -G ${params.ref}.fa -f 0.0005 -b ${bam} \
-		-c 1 -S 2 -E 3 -r 8 -Q 1 -q 25 -P 2 -m 8 \
-		${params.varbed} | Rscript --vanilla ${params.teststrandbias} | perl ${params.var2vcf_valid} -f 0.0005 -d 50 -c 5 -p 2 -q 25 -Q 1 -v 8 -m 8 -N vardict - > ${name}.vardict.vcf
+	picard MarkDuplicates I=$bam M=${sample.name}.MD.metrics.txt O=${sample.name}.first.md.bam
+	samtools index ${sample.name}.first.md.bam
 	"""
 }
-
-
-
-process NORMALIZE_VARIANTS {
-	tag "Normalizing variants on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/${name}/vcf/", mode:'copy'
-	
-	input:
-	tuple val(name), path (varscan_snv_path)
-	tuple val(name), path (varscan_indel_path)
-	tuple val(name), path (vardict_path)
-
-	output:
-	tuple val(name), path ("*varscan.snv.norm.vcf")
-	tuple val(name), path ("*varscan.indel.norm.vcf")
-	tuple val(name), path ("*.vardict.norm.vcf")
-	
-	script:
-	"""
-	bcftools -v
-	bcftools norm -f ${params.ref}.fa $varscan_snv_path -o ${name}.varscan.snv.norm.vcf
-	bcftools norm -f ${params.ref}.fa $varscan_indel_path -o ${name}.varscan.indel.norm.vcf
-	bcftools norm -f ${params.ref}.fa $vardict_path -o ${name}.vardict.norm.vcf
-	
-	"""
-}
-
-
-process MERGE_VARIANTS {
-	tag "Merging variants on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/${name}/vcf/", mode:'copy'
-	
-	input:
-	tuple val(name), path (varscan_snv_norm_path)
-	tuple val(name), path (varscan_indel_norm_path)
-	tuple val(name), path (vardict_norm_path)
-
-	output:
-	tuple val(name), path ("*allcallers.merged.vcf")
-	
-	script:
-	"""
-	java -jar ${params.gatk36} -T CombineVariants --variant:vardict ${vardict_norm_path} \
-		--variant:varscan_SNV ${varscan_snv_norm_path} \
-		--variant:varscan_INDEL ${varscan_indel_norm_path} \
-		-R ${params.ref}.fa -genotypeMergeOptions UNSORTED \
-		--disable_auto_index_creation_and_locking_when_reading_rods -o ${name}.allcallers.merged.vcf
-	"""
-}
-
-
-
-process NORMALIZE_MERGED_VARIANTS {
-	tag "Normalizing merged variants on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/${name}/vcf/", mode:'copy'
-	
-	input:
-	tuple val(name), path (merged_vcf)
-
-	output:
-	tuple val(name), path ("*allmerged.norm.vcf")
-	
-	script:
-	"""
-	bcftools norm -f ${params.ref}.fa $merged_vcf -o ${name}.allmerged.norm.vcf
-	"""
-}
-
-
-process ANNOTATE {
-	tag "Annotating variants on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/${name}/annotate/", mode:'copy'
-	
-	input:
-	tuple val(name), path (merged_normed_vcf)
-
-	output:
-	tuple val(name), path ("*allmerged.norm.annot.vcf")
-	
-	script:
-	"""
-	vep -i $merged_normed_vcf --cache --cache_version 95 --dir_cache $params.vep \
-	--fasta ${params.ref}.fa --merged --offline --vcf --everything -o ${name}.allmerged.norm.annot.vcf
-  
-	"""
-}
-
-
-
-// process NORMALIZE_VEP {
-// 	tag "Normalizing annotated variants on $name using $task.cpus CPUs and $task.memory memory"
-// 	publishDir "${launchDir}/${name}/annotate/", mode:'copy'
-	
-// 	input:
-// 	tuple val(name), path(annotated)
-
-// 	output:
-// 	tuple val(name), path("*allmerged.norm.annot.norm.vcf")
-	
-// 	script:
-// 	"""
-// 	biopet tool VepNormalizer -I $annotated -O ${name}.allmerged.norm.annot.norm.vcf -m explode  
-// 	"""
-// }
-
-
-// process CREATE_TXT {
-// 	tag "Simplify annotated table on $name using $task.cpus CPUs and $task.memory memory"
-// 	publishDir "${launchDir}/annotate/", mode:'copy'
-	
-// 	input:
-// 	tuple val(name), path(annotated_normed)
-
-// 	output:
-// 	tuple val(name), path("*.norm.merged.annot.normVEP.txt")
-	
-// 	script:
-// 	"""
-// 	python ${params.vcf_simplify} SimplifyVCF -toType table -inVCF $annotated_normed -out ${name}.norm.merged.annot.normVEP.txt  
-// 	"""
-// }
-
-
-// process CREATE_FINAL_TABLE {
-// 	tag "Creating final table on $name using $task.cpus CPUs and $task.memory memory"
-// 	publishDir "${launchDir}/annotate/", mode:'copy'
-	
-// 	input:
-// 	tuple val(name), path(annotated_normed)
-	
-// 	script:
-// 	"""
-// 	Rscript --vanilla ${params.create_table} ${launchDir}/annotate $run  
-// 	"""
-// }
-
-
-process CREATE_TXT {
-	tag "Simplify annotated table on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/annotate/", mode:'copy'
-	
-	input:
-	tuple val(name), path(annotated_normed)
-
-	output:
-	tuple val(name), path("*.norm.merged.annot.normVEP.txt")
-	
-	script:
-	"""
-	bcftools norm -m-both $annotated_normed > ${name}.allmerged.norm.vcf
-	python ${params.vcf2table_simple_mode} SimplifyVCF -toType table -inVCF $annotated_normed -out ${name}.norm.merged.annot.normVEP.txt  
-	"""
-}
-
-// process CREATE_FINAL_TABLE {
-// 	tag "Creating final table on $name using $task.cpus CPUs and $task.memory memory"
-// 	publishDir "${launchDir}/annotate/", mode:'copy'
-	
-// 	input:
-// 	tuple val(name), path(annotated_normed)
-	
-// 	script:
-// 	"""
-// 	Rscript --vanilla ${params.create_table} ${launchDir}/annotate $run  
-// 	"""
-// }
-
-process COVERAGE {
-	tag "Creating coverage on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/coverage/", mode:'copy'
-	
-	input:
-	tuple val(name), path(bam)
-
-	output:
-	tuple val(name), path("*.txt")
-	
-	script:
-	"""
-	bedtools coverage -abam ${params.covbed} -b $bam -d > ${name}.PBcoverage.txt   
-	"""
-}
-
-process COVERAGE_STATS {
-	tag "Creating coverage stats on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/coverage/", mode:'copy'
-	
-	input:
-	tuple val(name), path(whatever_navaznost)
-	
-	script:
-	"""
-	Rscript --vanilla ${params.coverstat} ${launchDir}/coverage $run  
-	"""
-}
-
 
 process MULTIQC {
-	tag "first QC on $name using $task.cpus CPUs and $task.memory memory"
-	publishDir "${launchDir}/${name}/coverage/", mode:'copy'
-	
+	tag "MultiQC using $task.cpus CPUs and $task.memory memory"
+	publishDir "${params.outDirectory}/multiqc_reports/", mode:'copy'
+	label "smallest_process"
+	container "staphb/multiqc:1.19"
+	// container 'registry.gitlab.ics.muni.cz:443/450402/tp53_nf:5'
+
 	input:
-	tuple val(name), path(bam)
+	path '*'
 
 	output:
-	path "report.html"
+	path '*.html'
 
 	script:
 	"""
-	samtools flagstat $bam > ${name}.flagstat
-	samtools stats $bam > ${name}.samstats
-        picard BedToIntervalList -I ${params.covbedpicard} -O ${name}.interval_list -SD ${params.ref}.dict
-	picard CollectHsMetrics -I $bam -BAIT_INTERVALS ${name}.interval_list -TARGET_INTERVALS ${name}.interval_list -R ${params.ref}.fa -O ${name}.aln_metrics
-	multiqc . -n report.html
+	export LC_ALL=C.UTF-8
+	export LANG=C.UTF-8
+	multiqc . -n MultiQC-"`date +"%d-%m-%Y"`".html
+	"""
+}
+
+process MUTECT2 {
+	tag "MUTECT2 on $sample.name using $task.cpus CPUs and $task.memory memory"
+	
+	input:
+	tuple val(sample), path(bam)
+	
+	output:
+	tuple val(sample), path ('*.vcf')
+	path '*'
+
+	script:
+	"""
+	gatk Mutect2 --reference ${params.ref}.fasta --input ${bam} --annotation StrandArtifact --min-base-quality-score 10 --intervals $params.covbed -bamout ${sample.name}.bamout.bam --output ${sample.name}.mutect.vcf
+	"""
+}
+
+process FILTER_MUTECT {
+	tag "filter mutect on $sample.name using $task.cpus CPUs and $task.memory memory"
+	label "smallest_process"
+
+	input:
+	tuple val(sample), path(vcf_input)
+	
+	output:
+	tuple val(sample), path ('*.vcf')
+
+	script:
+	"""
+	gatk FilterMutectCalls -V $vcf_input -O ${sample.name}.mutect.filt.vcf
 	"""
 
 }
 
- 
-workflow {
- rawfastq = channel.fromFilePairs("${params.datain}/CLL*R{1,2}*", checkIfExists: true)
- 
-	trimmed1	= TRIMMING_1(rawfastq)
-	trimmed2	= TRIMMING_2(trimmed1)	
-	sortedbam	= FIRST_ALIGN_BAM(trimmed2)
-	pileup		= PILE_UP(sortedbam[0])
-	varscanned	= VARSCAN(pileup)
-	vardicted	= VARDICT(sortedbam[0],sortedbam[1])
-	normalized	= NORMALIZE_VARIANTS(varscanned,vardicted)
-	merged		= MERGE_VARIANTS(normalized)
-	norm_merged	= NORMALIZE_MERGED_VARIANTS(merged)
-	annotated	= ANNOTATE(norm_merged)
-	annot_norm	= NORMALIZE_VEP(annotated)
-	txt		= CREATE_TXT(annot_norm)
-	final_table	= CREATE_FINAL_TABLE(txt)
+process NORMALIZE_MUTECT {
+	tag "normalize filtered mutect on $sample.name using $task.cpus CPUs $task.memory"
+	label "smallest_process"
 
-	covered		= COVERAGE(sortedbam[0])
-	COVERAGE_STATS(covered)					
-	MULTIQC(sortedbam[0])	
+	input:
+	tuple val(sample), path(vcf_input)
+	
+	output:
+	tuple val(sample), path ('*.vcf')
+
+	script:
+	"""
+	bcftools norm -m-both $vcf_input > ${sample.name}.mutect.filt.norm.vcf
+	"""
+}
+
+process ANNOTATE_MUTECT {
+	tag "annotate mutect on $sample.name using $task.cpus CPUs $task.memory"
+	container "ensemblorg/ensembl-vep:release_108.0"
+	publishDir "${params.outDirectory}/${sample.run}/variants/", mode:'copy'
+	label "smallest_process"
+
+	input:
+	tuple val(sample), path(vcf_input)
+	
+	output:
+	tuple val(sample), path('*.vcf')
+
+	script:
+	"""
+	vep -i $vcf_input --cache --cache_version 108 --dir_cache $params.vep \
+	--fasta ${params.ref}.fasta --merged --mane_select --offline --vcf --everything -o ${sample.name}.mutect2.filt.norm.vep.vcf
+	"""	
+}
+
+process JOIN_VARS_TO_FILE {
+	tag "JOIN_VARS_TO_FILE  using $task.cpus CPUs $task.memory"
+	publishDir "${params.variantsDBdir}/", mode:'copy'
+	label "smallest_process"
+
+	input:
+	path "VcfsToMerge"
+	
+	output:
+	path "DB.bed"
+
+	script:
+	"""
+	for vcf_file in $VcfsToMerge; do bcftools query -f '%CHROM\\t%POS\\t%REF\\t%ALT[\\t%SAMPLE]\\n' "\$vcf_file" >> temp.bed; done
+	awk '!seen[\$0]++' temp.bed ${params.variantsDBdir}/DB.bed >> DB.bed
+	# make sure there are no duplicates
+	"""	
+}
+
+process CREATE_FULL_TABLE {
+	tag "creating full table on $sample.name using $task.cpus CPUs $task.memory"
+		publishDir "${params.outDirectory}/${sample.run}/create_full_table/", mode:'copy'
+
+	label "smallest_process"
+
+	input:
+	tuple val(sample), path(vcf_input)
+	
+	output:
+	tuple val(sample), path("${sample.name}.mutect2.filt.norm.vep.full.csv")
+
+	script:
+	"""
+	python $params.vcftbl simple --build GRCh38 -i $vcf_input -t ${sample.name} -o ${sample.name}.mutect2.filt.norm.vep.full.csv
+	"""	
+}
+
+process ALTER_FULL_TABLE {
+	tag "ALTER_FULL_TABLE on $sample.name using $task.cpus CPUs $task.memory"
+	publishDir "${params.outDirectory}/${sample.run}/variants/", mode:'copy'
+	label "smallest_process"
+
+	input:
+	tuple val(sample), path(variantsTableCsv), path(joinedTsv)//, val(ntotal)
+	
+	output:
+	tuple val(sample), path("${sample.name}.final.csv")
+
+	script:
+	"""
+	echo alter full table on $sample.name
+	python ${params.mergetables} --table $variantsTableCsv --varlist $joinedTsv --outname ${sample.name}.final.csv
+	"""	
+}
+
+process COVERAGE {
+	tag "calculating coverage on $sample.name using $task.cpus CPUs $task.memory"
+	publishDir "${params.outDirectory}/${sample.run}/coverage/", mode:'copy'
+
+	input:
+	tuple val(sample), path(bam)
+	
+	output:
+	tuple val(sample), path('*.PBcov.txt')
+
+	script:
+	"""
+	bedtools coverage -abam $params.covbed -b $bam -d > ${sample.name}.PBcov.txt
+	"""	
+}
+
+
+
+process COVERAGE_R {
+	tag "R coverage on $sample.name using $task.cpus CPUs $task.memory"
+	publishDir "${params.outDirectory}/${sample.run}/coverage/", mode:'copy'
+	label "smallest_process"
+
+	input:
+	tuple val(sample), path(pbcov)
+
+	script:
+	"""
+	Rscript --vanilla $params.coverstat $pbcov ${params.outDirectory}/${sample.run}/coverage/${sample.name}.perexon_stat.txt
+	"""
+}
+
+workflow {
+
+runlist = channel.fromList(params.samples)
+rawfastq = COLLECT_BASECALLED(runlist)
+
+trimmed	= TRIMMING(rawfastq)
+sortedbam	= FIRST_ALIGN_BAM(trimmed)
+qc_files	= FIRST_QC(sortedbam[0])
+qcdup_file	= MARK_DUPLICATES(sortedbam[0])
+MULTIQC(qc_files.collect())
+raw_vcf	= MUTECT2(qcdup_file[1]) //markdup.bam 
+filtered	= FILTER_MUTECT(raw_vcf[0])
+normalized	= NORMALIZE_MUTECT(filtered)
+annotated	= ANNOTATE_MUTECT(normalized)
+full_table	= CREATE_FULL_TABLE(annotated)
+Vcf_paths = normalized.map({it -> [it[1]]})
+Vcf_paths_collected = Vcf_paths.collect()
+joined_vars = JOIN_VARS_TO_FILE(Vcf_paths_collected)
+ALTER_FULL_TABLE(full_table.combine(joined_vars))
+pbcov = COVERAGE(sortedbam[0])
+COVERAGE_R(pbcov)
 }
